@@ -1,5 +1,5 @@
 # Titanic
-Repositorio privado para la práctica 2 de "Tipología y ciclo de vida de los datos"
+Repositorio para la práctica 2 de "Tipología y ciclo de vida de los datos"
 
 ## Comenzando 🚀
 
