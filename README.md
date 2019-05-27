@@ -7,7 +7,7 @@ Se debe usar la opción clone del github para obtener una copia del proyecto en 
 
 ### Pre-requisitos 📋
 
-Se requieren las siguientes librerías de python para poder ejecutar el código:
+Se requieren las siguientes librerías de R para poder ejecutar el código:
 
   * car
   * corrplot
@@ -35,7 +35,7 @@ Las herramientas usadas para crear el proyecto son:
 
 ## Wiki 📖
 
-Puedes encontrar mucho más de cómo utilizar este proyecto en nuestra [Wiki](https://github.com/azucenagm/Titanic/wiki)
+Puedes encontrar mucho más sobre cómo utilizar este proyecto en nuestra [Wiki](https://github.com/azucenagm/Titanic/wiki)
 
 ## Autores ✒️
 
