@@ -1,0 +1,943 @@
+---
+title: 'Tipología y ciclo de vida de los datos: Práctica 2'
+author: "Azucena González (azucenagm) y Jesús Márquez (jmarquez01)"
+date: "Mayo 2019"
+lang: es-ES
+output:
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+    includes:
+      in_header: uoc_header.html
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE, fig.align="center")
+```
+
+# Introducción
+
+El hundimiento del RMS Titanic es uno de los naufragios más infames de la historia. El 15 de abril de 1912, durante su viaje inaugural, el Titanic se hundió después de chocar con un iceberg, matando a 1502 de 2224 pasajeros y tripulantes. Esta tragedia conmocionó a la comunidad internacional y condujo a mejores regulaciones de seguridad para los buques, dado que una de las principales razones de tal pérdida de vidas fue que no había suficientes botes salvavidas para los pasajeros y la tripulación.
+
+El objetivo del siguiente **estudio KDD** es realizar un análisis que permita **determinar qué tipos de personas podrían sobrevivir** al hundimiento. Se aplicarán, por tanto, varias técnicas de minería de datos y *machine learning* para obtener un modelo que permita predecir con un nivel de calidad aceptable qué pasajeros sobrevivirían a la tragedia.
+
+## Descripción del dataset
+
+Se ha obtenido el conjunto de datos disponible en Kaggle (https://www.kaggle.com) con el listado de pasajeros del Titanic y si sobrevivieron o no al naufragio. Los datos recogidos contienen los siguientes campos:
+
+* PassengerId: identificador numérico (entero) para cada pasajero.
+* Survived: que toma dos posibles valores e indica si el pasajero sobrevivió. 0 significa que no sobrevivió, 1 que sí lo hizo.
+* Pclass: número entero que indica la clase en la que viaja el pasajero. Se ha codificado como 1 para primera clase, 2 para segunda clase y 3 para tercera clase.
+* Name: nombre del pasajero.
+* Sex: sexo del pasajero. Se indica male para hombres y female para mujeres.
+* Age: número entero que representa la edad del pasajero.
+* SibSp: número de hermanos/cónyuges que se encontraban a bordo.
+* Parch: número de padres/hijos que se encontraban a bordo.
+* Ticket: identificador del billete.
+* Fare: numérico con decimales que representa la tarifa del billete.
+* Cabin: número de cabina.
+* Embarked: puerto de embarque, habiéndose codificado como C para Cherbourg, Q para Queenstown y S para Southampton.
+
+El dataset se encuentra dividido en dos ficheros:
+
+* **titanic.train.csv** o conjunto de entrenamiento, que contiene 892 registros y que suele emplearse para entrenar las técnicas supervisadas de data mining que se utilicen durante el estudio.
+* **titanic.test.csv** o conjunto de prueba, con 419 observaciones, que suele utilizarse en algunos algoritmos supervisados para evaluar la calidad del modelo construido. Este fichero no contiene el campo *Survived*, pero puede encontrarse esta información en **titanic.test.solution.csv**.
+
+Antes de iniciar la carga de los ficheros correspondientes, se ejecutan las librerías que se van a usar durante el análisis.
+
+```{r librerias}
+# Se comprueba si los paquetes de las librerías a usar están descargados. Si no, se 
+# procede a su descarga e instalación
+
+# Librerías con utilidades para matrices de correlación
+if(!"car" %in% installed.packages()) install.packages("car", depend=TRUE)
+library(car)
+
+if(!"corrplot" %in% installed.packages()) install.packages("corrplot", depend=TRUE)
+library(corrplot)
+
+# Visualización de gráficas
+if(!"ggplot2" %in% installed.packages()) install.packages("ggplot2", depend=TRUE)
+library(ggplot2)
+
+# Paleta de colores para gráficas
+if(!"RColorBrewer" %in% installed.packages()) install.packages("RColorBrewer", 
+                                                               depend=TRUE)
+library(RColorBrewer)
+
+# Funciones y utilidades para el tratamiento de data frames
+if(!"dplyr" %in% installed.packages()) install.packages("dplyr", depend=TRUE)
+library(dplyr)
+
+# Funciones relacionadas con curvas ROC
+if(!"pROC" %in% installed.packages()) install.packages("pROC", depend=TRUE)
+library(pROC)
+
+# Utilidades para formateo avanzado de tablas
+if(!"kableExtra" %in% installed.packages()) install.packages("kableExtra", depend=TRUE)
+library(kableExtra)
+
+# Funciones relacionadas con el algoritmo kNN (VIM)
+if(!"VIM" %in% installed.packages()) install.packages("VIM", depend=TRUE)
+library(VIM)
+
+# Funciones relacionadas con paquete caret
+if(!"caret" %in% installed.packages()) install.packages("caret", depend=TRUE)
+library(caret)
+
+# Funciones relacionadas con los árboles de decisión
+if(!"C50" %in% installed.packages()) install.packages("C50", depend=TRUE)
+library(C50)
+
+# Funciones para la ejecución del algoritmo random forest
+if(!"randomForest" %in% installed.packages()) install.packages("randomForest", 
+                                                               depend=TRUE)
+library(randomForest)
+```
+
+## Carga de los datos
+
+Se realiza la carga de los dos conjuntos de datos, indicando que la primera línea es la cabecera de datos y que deben eliminarse los espacios en blanco que pueda haber entre campos. También se realiza la carga del fichero que contiene los valores de la variable Survived para el conjunto de datos de prueba.
+
+```{r carga-ficheros}
+# Datos para entrenamiento
+trainData <- read.csv("titanic.train.csv", header=TRUE, strip.white=TRUE, 
+                      stringsAsFactors=FALSE)
+
+# Datos para test
+testData <- read.csv("titanic.test.csv", header=TRUE, strip.white=TRUE, 
+                     stringsAsFactors=FALSE)
+
+# Datos con el valor de la variable Survived para los datos de test
+testSolution <- read.csv("titanic.test.solution.csv", header=TRUE, strip.white=TRUE, 
+                     stringsAsFactors=FALSE)
+
+# Se visualizan los primeros registros para comprobar que la carga ha sido correcta
+kable(head(trainData)) %>% kable_styling(latex_options=c("striped", "scale_down"))
+kable(head(testData)) %>% kable_styling(latex_options=c("striped", "scale_down"))
+kable(head(testSolution)) %>% kable_styling(latex_options=c("striped"))
+
+# Se muestra la estructura de ambos datasets para revisar los tipos de datos asignados
+# por defecto
+str(trainData)
+str(testData)
+str(testSolution)
+```
+
+# Integración y selección de los datos
+
+## Integración 
+
+Aunque inicialmente se nos facilita el conjunto total de datos separado entre el conjunto de pruebas y el de entrenamiento, vamos a proceder a tratar ambos conjuntamente para su preprocesado y limpieza. Posteriormente, para realizar la evaluación de varios modelos, se separarán en varios grupos (*k-fold cross validation*).
+
+En primer lugar, debe incorporarse al conjunto de datos de prueba la variable objeto del análisis, Survived, que se encuentra en el dataset que hemos denominado *testSolution*. Después se unificarán en un único dataframe los dos conjuntos de datos.
+
+```{r revision-unicidad-id}
+# Comprobamos que el PassengerId no se repite ni dentro de cada grupo ni en ambos
+# conjuntamente: es un identificador que debería ser único
+
+# Suma del número de registros de ambos grupos
+length(trainData$PassengerId) + length(testData$PassengerId)
+
+# Total de registros únicos
+length(unique(append(trainData$PassengerId, testData$PassengerId)))
+```
+
+El número de PassengerId únicos coincide con el total de registros de ambos *dataframes*, por lo que no hay observaciones repetidas.
+
+```{r union-ficheros}
+# Se realiza un inner join por PassengerId
+testDataSolution <- merge(x=testData, y=testSolution, by="PassengerId")
+ 
+# Se visualizan los primeros registros para comprobar que el join ha sido correcto
+kable(head(testDataSolution)) %>% kable_styling(latex_options=c("striped", "scale_down"))
+
+# Se muestra la estructura del dataset para comprobar que es correcta (mismas variables y del 
+# mismo tipo)
+str(testDataSolution)
+
+# Por último, se unen los dos conjuntos de datos en un único data frame
+titanicData <- rbind(trainData, testDataSolution)
+
+# A modo de comprobación, se visualizan los primeros registros
+kable(head(titanicData)) %>% kable_styling(latex_options=c("striped", "scale_down"))
+
+# La estructura del data frame resultante
+str(titanicData)
+
+# Y que no hay passengerId repetidos
+sum(duplicated(titanicData$passengerId))
+```
+
+Se revisan los tipos asignados a cada variable: Survived, Pclass, Sex y Embarked son variables categóricas, por lo que se deben declarar como factores.
+
+```{r factorizacion-variables}
+# Se convierten a factores las variables indicadas
+titanicData$Survived <- factor(titanicData$Survived, levels=c(0, 1), 
+                               labels=c("No", "Si"))
+titanicData$Pclass <- as.factor(titanicData$Pclass)
+titanicData$Sex <- as.factor(titanicData$Sex)
+titanicData$Embarked <- as.factor(titanicData$Embarked)
+
+# Se comprueba el cambio de tipos
+str(titanicData)
+```
+
+## Selección de los datos de interés
+
+### Reducción de la dimensionalidad
+
+Tras la revisión inicial del *dataset* y las variables que lo forman, se decide eliminar la relativa al nombre del pasajero, ya que no debería tener relevancia alguna en el estudio. Eliminamos también PassengerId, pues no se trata de ninguna característica de los pasajeros, sino de un identificador asignado a posteriori, con el único objetivo de tener identificada cada una de las observaciones del dataset.
+
+```{r borrar-vble-name}
+# Se eliminan las variables Name y PassengerID
+titanicData <- select(titanicData, -c("PassengerId", "Name"))
+str(titanicData)
+```
+
+Con el objetivo de ver si es posible descartar alguna de las variables numéricas, procedemos a aplicar un análisis de componentes principales. Mediante esta técnica se puede detectar qué variables aportan un porcentaje de varianza mayor y son, por tanto, más significativas.
+
+```{r reducir-dimensionalidad}
+# Se ejecuta PCA
+titanic.pca <- prcomp(na.omit(select(titanicData,c("Age", "SibSp", "Parch", "Fare"))), 
+                      center=TRUE, scale=TRUE)
+summary(titanic.pca)
+```
+
+Aunque los dos primeros componentes contribuyen a una mayor proporción de varianza (casi un 70%), los dos restantes aportan un porcentaje lo suficientemente elevado (algo más del 30%) y parejo entre sí, como para tomar la decisión de mantener todas las variables en la construcción del modelo.
+
+No obstante, es probable que tras un estudio más detallado de los datos en los siguientes apartados, se decida eliminar algún atributo más. Además, se podrán descartar puntualmente variables en la aplicación de alguna de las técnicas estadísticas del análisis, ya sea para mejorar su desempeño o por incompatibilidad del tipo de dato con el algoritmo en uso.
+
+### Reducción de cantidad
+
+Dado que el número de registros del data frame no es muy elevado, no se plantea una reducción de la cantidad de registros.
+
+# Limpieza de los datos
+
+Como paso previo a la aplicación de cualquier técnica de análisis de datos, es preciso revisar el *dataset* suministrado con el objetivo de encontrar errores e incongruencias y homogeneizar el contenido de las variables que lo conforman.
+
+Mediante la función summary visualizamos un resumen completo de los datos:
+
+* Para las variables cuantitativas, se muestran los valores mínimos/máximos, la media, la mediana y los cuartiles primero y tercero.
+* Para las variables cualitativas definidas como factores, la frecuencia de valores por categoría.
+
+```{r resumen-dataset}
+# Resumen de las variables del dataset
+summary(titanicData)
+```
+
+Con esta breve revisión ya pueden apreciarse varios aspectos que deben tratarse antes de iniciar cualquier proceso analítico como, por ejemplo, la existencia de valores perdidos (NA’s) en algunas de las variables (Age y Fare) y de valores vacíos (Embarked). También llaman la atención algunos valores encontrados en las variables numéricas, como los valores mínimo (`r min(titanicData$Fare, na.rm=TRUE)`) y máximo (`r max(titanicData$Fare, na.rm=TRUE)`) de Fare, éste último muy alejado de la mediana.
+
+## Tratamiento de elementos vacíos y ceros
+
+### Revisión de los datos
+
+Comprobamos el total de datos que presentan valores vacíos (NA y no informados) y a cero por variable:
+
+```{r buscar-valores-vacios-cero}
+# Número de observaciones con valores NA
+cat("\nNúmero de observaciones con valores NA\n")
+colSums(is.na(titanicData))
+
+# Número de observaciones con valores vacíos
+cat("\nNúmero de observaciones con valores vacíos\n")
+colSums(titanicData=="", na.rm=TRUE)
+
+# Número de registros con ceros
+cat("\nNúmero de registros con ceros\n")
+colSums(titanicData==0, na.rm=TRUE)
+```
+
+Hay valores a cero en las variables numéricas SibSp, Parch y Fare. En las dos primeras (número de hermanos/cónyuges y número de padres/hijos) este valor es razonable y se asumirán estos valores como correctos. En cuanto a Fare (coste del pasaje) es, a priori, extraño que ciertos billetes no tuviesen coste alguno, y, aunque podrían ser valores correctos (por ejemplo, podrían ser invitaciones al viaje inaugural), se estudiarán a continuación con más detalle.
+
+### Tratamiento
+
+#### Valores vacíos 
+
+En el caso de la variable Cabin, el porcentaje de valores vacíos es demasiado alto (`r signif(sum(titanicData$Cabin=="")/length(titanicData$Cabin)*100, digits=4)`%) como para poder extrapolarlo o que resulte útil en el estudio, por lo que se decide descartar esta variable.
+
+```{r borrar-vble-cabin}
+# Se descarta la variable Cabin
+titanicData <- select(titanicData, -c(Cabin))
+
+# Se visualizan los primeros registros para comprobar la eliminación realizada
+kable(head(titanicData)) %>% kable_styling(latex_options=c("striped", "scale_down"))
+```
+
+Para el caso de los dos registros con valores vacíos encontrados en Embarked, se van a sustituir por valores NA y serán tratados posteriormente haciendo uso del algoritmo kNN para su imputación.
+
+
+```{r sustituir-valores-vacios}
+# Se sustituyen los valores vacíos por el valor NA
+titanicData$Embarked[titanicData$Embarked==""] <- NA
+```
+
+#### Valores igual a cero
+
+Revisamos qué registros son los que tienen el importe de Fare a 0.
+
+```{r buscar-valores-cero}
+# Se visualizan los casos en los que el valor del billete es igual a cero
+filter(titanicData, Fare==0)
+```
+
+No parece apreciarse ningún patrón o característica específica en las observaciones mostradas: parece poco probable que el valor de 0 sea correcto (que se deba, por ejemplo, a invitaciones al viaje inaugural, puesto que hay varias en tercera clase), por lo que se va a proceder a sustituir estos valores perdidos con valores NA para ser tratados junto con el resto de valores perdidos con el algoritmo kNN.
+
+```{r sustituir-valores-cero}
+# Se sustituyen los valores vacíos por el valor NA
+titanicData$Fare[titanicData$Fare==0] <- NA
+```
+
+#### Valores NAs
+
+Para los valores NA existentes en las variables Embarked, Age y Fare, se va a usar la técnica kNN (por sus siglas en inglés, k-Nearest Neighbours), que permite predecir valores en conjuntos de datos multidimensionales formados por datos mixtos (continuos, discretos, ordinales y/o nominales). Este algoritmo encuentra los k vecinos más cercanos y, dependiendo de la variable a imputar, aplica uno de los dos criterios siguientes:
+
+* Si es cualitativa, le asignará el valor más frecuente.
+* Si es cuantitativa, le dará el valor de la mediana.
+
+Se comprueba el número de valores NA:
+
+```{r valores-NAs}
+# Se comprueba el número de valores NA por variable y se muestran gráficamente
+summary(aggr(titanicData, numbers=TRUE))
+```
+
+Como puede observarse, la variable con mayor cantidad de valores perdidos es Age, con 263 registros (aproximadamente un 20% del total) sin informar. En la gráfica de la derecha se muestran las combinaciones de variables perdidas. Un 79% de las observaciones tienen todas sus variables informadas, y sólo un 0,7% tienen más de un valor perdido (Fare y Age).
+
+Se procede a realizar la imputación:
+
+```{r imputacion-KNN}
+# Se aplica kNN con el valor de k por defecto, 5, e indicando que no es preciso generar
+# las variables informativas de imputación
+titanicData <- VIM::kNN(titanicData, imp_var=FALSE)
+
+# Se comprueba que ya no hay valores NA
+colSums(is.na(titanicData))
+```
+
+Se vuelven a establecer los niveles de la variable Embarked, ahora ya con sólo tres categorías correspondientes a los tres puertos de embarque:
+
+```{r refresco-niveles-factores}
+# Se establecen los factores omitiendo el factor NA
+titanicData$Embarked <- factor(titanicData$Embarked, levels=c("C","Q","S"))
+
+# Se comprueban los factores y la distribución de valores
+levels(titanicData$Embarked)
+summary(titanicData$Embarked)
+```
+
+## Tratamiento de valores extremos 
+
+Procedemos a revisar mediante gráficos de cajas y bigotes posibles valores extremos de las variables.
+
+```{r boxplot-age}
+# Boxplot de Age
+boxplot(titanicData$Age, main="Edad", col="steelblue2")
+
+# Mostramos los valores extremos mediante las estadísticas del gráfico
+boxplot.stats(titanicData$Age)$out
+```
+
+Dentro de la variable edad se han detectado varios valores considerados extremos pero, tras revisarlos, se comprueba que entran dentro de un rango válido para la edad, por lo que se consideran correctos y no se realizará ningún tratamiento adicional.   
+
+```{r boxplot-sibsp}
+# Boxplot de SibSp
+boxplot(titanicData$SibSp, main="Número de hermanos/cónyuges", col="steelblue2")
+
+# Mostramos los valores extremos
+boxplot.stats(titanicData$SibSp)$out
+```
+
+Esta variable recoge el número de hermanos o cónyuges de cada pasajero y, como en el caso anterior, aunque se detectan varios valores extremos, parecen razonables y por tanto no se realizará acción alguna sobre ellos.
+
+```{r boxplot-parch}
+# Boxplot de Parch
+boxplot(titanicData$Parch, main="Número de padres/hijos", col="steelblue2")
+
+# Mostramos los valores extremos
+boxplot.stats(titanicData$Parch)$out
+```
+
+Esta variable representa el número de hijos o padres. Los valores mostrados también están dentro de un rango razonable y no es posible determinar si alguno de ellos es erróneo, por lo que tampoco se aplicará tratamiento alguno.
+
+```{r boxplot-fare}
+# Boxplot de Fare
+boxplot(titanicData$Fare, main="Tarifa del pasaje", col="steelblue2")
+
+# Mostramos los valores extremos utilizando las estadísticas de $out
+boxplot.stats(titanicData$Fare)$out
+```
+
+Esta variable recoge el precio del pasaje. Sobresale especialmente el importe máximo (superior a 500) por su diferencia con el siguiente valor (alrededor de 200). Mostramos estos registros para intentar deducir si se trata de una errata o su valor es correcto:
+
+```{r filtro-fare}
+# Revisamos los registros con mayor valor
+kable(filter(titanicData, Fare>500)) %>% kable_styling(latex_options=c("striped", "scale_down"))
+```
+
+Las cuatro observaciones con el valor máximo corresponden al mismo ticket, por lo que se puede concluir o que ese ticket en concreto fue mal registrado o que es un valor válido y se trata de un pasaje VIP. Tras revisar documentación externa especializada (*Traveler*, 2016) sobre el coste de los billetes en el Titanic y constatar que entran dentro del rango de valores posibles, se determina que son válidos.
+
+## Discretización
+
+Ciertos métodos estadísticos requieren u obtienen un mejor desempeño utilizando variables discretas en lugar de continuas. Por ello, se va a proceder a crear nuevas variables que agrupen en distintos grupos los siguientes atributos: Age, Fare, SibSp y Parch.
+
+```{r discretizacion}
+# Discretización para edad
+titanicData$AgeD <- cut(titanicData$Age, c(0, 16, 60, 90), 
+                        labels=c("kid", "adult", "elder"), 
+                        include.lowest=TRUE, right=FALSE)
+
+# Discretización para tarifa del pasaje
+titanicData$FareD <- cut(titanicData$Fare, c(0, 9, 33, 520),
+                         labels=c("low", "medium", "high"),
+                         include.lowest=TRUE, right=FALSE)
+
+# Discretización para número de hermanos/cónyuges
+titanicData$SibSpD <- cut(titanicData$SibSp, c(0, 1, 4, 10),
+                         labels=c("none", "few", "many"),
+                         include.lowest=TRUE, right=FALSE)
+
+# Discretización para número de padres/hijos
+titanicData$ParchD <- cut(titanicData$Parch, c(0, 1, 4, 10),
+                         labels=c("none", "few", "many"),
+                         include.lowest=TRUE, right=FALSE)
+
+# Se visualizan algunos datos para comprobar el contenido de las nuevas variables
+kable(head(titanicData)) %>% kable_styling(latex_options=c("striped", "scale_down"))
+
+# Se revisa que se hayan creado como factores
+str(titanicData)
+```
+
+# Análisis de los datos
+
+## Análisis descriptivo visual
+
+Previo al análisis detallado de los datos y a la elaboración de los tests estadísticos, es importante realizar un primer análisis visual de los mismos para conocer mejor sus características y distribución de valores. 
+
+Para las variables cualitativas o categóricas, se utilizarán diagramas de barras o de sectores. Para las variables cuantitativas, además de los diagramas de cajas que ya han sido empleados en el apartado de valores extremos, se emplearán histogramas. Se realizará además un estudio visual sobre posibles relaciones entre variables con el objetivo de eliminar posibles redundancias.
+
+### Variable Survived
+
+Esta variable representa si el pasajero sobrevivió (valor "Si") o no (valor "No") al hundimiento del Titanic. Es la variable que se pretende explicar o predecir a partir del resto.
+
+Como puede observarse a continuación, el número de pasajeros que fallecieron fue muy elevado, casi dos tercios del total.
+
+```{r visualizar-survived}
+# Se muestra la tabla de frecuencias
+table(titanicData$Survived)
+
+# Se genera una gráfica de tarta
+# Nombres y porcentajes de los sectores
+pieNames <- names(table(titanicData$Survived))
+piePerc <- round(prop.table(table(titanicData$Survived))*100, 2)
+
+# Incorporamos a la etiqueta del gráfico los nombres y porcentajes de cada categoría
+pieLabels <- paste(pieNames, "\n", piePerc, "%")
+
+pie(table(titanicData$Survived), labels=pieLabels, main="Pasajeros que sobrevivieron", 
+    col=brewer.pal(2, "Blues"))
+```
+
+### Variable Pclass
+
+Esta variable representa la clase en la que viaja cada pasajero. Más de la mitad lo hacían en tercera clase, mientras que la proporción entre primera y segunda está más equilibrada. 
+
+```{r visualizar-pclass}
+# Se muestra la tabla de frecuencias
+pclassTable <- table(titanicData$Pclass)
+rownames(pclassTable) <- c("Primera", "Segunda", "Tercera")
+pclassTable
+
+# Se genera una gráfica de tarta
+# Nombres y porcentajes de los sectores
+pieNames <- names(pclassTable)
+piePerc <- round(prop.table(pclassTable)*100, 2)
+
+# Incorporamos a la etiqueta del gráfico los nombres y porcentajes de cada categoría
+pieLabels <- paste(pieNames, "\n", piePerc, "%")
+
+pie(pclassTable, labels=pieLabels, main="Clase del pasaje",
+    col=brewer.pal(3, "Blues"))
+```
+
+### Variable Sex
+
+En cuanto a la distribución por sexos, según puede observarse en el gráfico siguiente, predominaban los hombres, constituyendo casi dos terceras partes de los pasajeros.
+
+```{r visualizar-sex}
+# Se muestra la tabla de frecuencias
+sexTable <- table(titanicData$Sex)
+rownames(sexTable) <- c("Mujer", "Hombre")
+sexTable
+
+# Se genera una gráfica de tarta
+# Nombres y porcentajes de los sectores
+pieNames <- names(sexTable)
+piePerc <- round(prop.table(sexTable)*100, 2)
+
+# Incorporamos a la etiqueta del gráfico los nombres y porcentajes de cada categoría
+pieLabels <- paste(pieNames, "\n", piePerc, "%")
+
+pie(sexTable, labels=pieLabels, main="Sexo",
+    col=brewer.pal(3, "Blues"))
+```
+
+### Variable Age
+
+Respecto a la edad, vemos que hay una acumulación de observaciones alrededor de edades intermedias (entre los 20 y 40 años aproximadamente). También puede observarse un sesgo a la derecha, hacia edades superiores.
+
+```{r visualizar-age}
+# Resumen de los valores de Age
+summary(titanicData$Age)
+
+# Se genera el histograma, estableciendo un ancho de barras de 5 años
+ggplot(data=titanicData, aes(x=Age, fill=Age)) + 
+  geom_histogram(binwidth=5, color="darkblue", fill="lightblue") + 
+  labs(x="Edad", y="Frecuencia")
+```
+
+### Variable SibSp
+
+Esta variable indica el número de hermanos y/o cónyuges de los pasajeros. Puede observarse en el gráfico una proporción elevada de personas que viajan sin hermanos ni esposos y el valor atípico que ya habíamos detectado previamente de 8, claramente separado del resto. 
+
+```{r visualizar-sibsp}
+# Resumen de los valores de SibSp
+summary(titanicData$SibSp)
+
+# Se genera el gráfico de barras
+ggplot(data=titanicData, aes(x=SibSp, fill=SibSp)) + 
+  geom_bar(color="darkblue", fill="lightblue") + 
+  labs(x="Número de hermanos/cónyuges", y="Frecuencia")
+```
+
+### Variable Parch
+
+Con esta variable se indica el número de padres e hijos de los pasajeros. Puede apreciarse, de manera análoga al caso anterior, que también hay una gran proporción de viajeros que viajaban solos (sin ascendencia/descendencia). También se observa el valor extremo de 9 aislado a la derecha de la grafica.
+
+```{r visualizar-parch}
+# Resumen de los valores de Parch
+summary(titanicData$Parch)
+
+# Se genera el histograma
+ggplot(data=titanicData, aes(x=Parch, fill=Parch)) + 
+  geom_bar(color="darkblue", fill="lightblue") + 
+  labs(x="Número de padres/hijos", y="Frecuencia")
+```
+
+### Variable Fare
+
+Esta variable representa el precio del pasaje. Aunque hay un rango de precios muy amplio, un 75% de los valores se concentra en la franja igual o inferior a 65 (ver boxplot para más detalles).
+
+```{r visualizar-fare}
+# Resumen de los valores de Fare
+summary(titanicData$Fare)
+
+# Se genera el histograma, estableciendo un ancho de barras de 15
+ggplot(data=titanicData, aes(x=Fare, fill=Fare)) + 
+  geom_bar(binwidth=15, color="darkblue", fill="lightblue") + 
+  labs(x="Tarifa del pasaje", y="Frecuencia")
+```
+
+### Variable Embarked
+
+Esta variable identifica los tres puertos desde los que embarcaron los pasajeros. Según se aprecia en el gráfico de sectores, fue en Southampton donde se recogió la mayor parte de pasajeros.
+
+```{r visualizar-embarked}
+# Se muestra la tabla de frecuencias
+embarkedTable <- table(titanicData$Embarked)
+rownames(embarkedTable) <- c("Cherbourg", "Queenstown", "Southampton")
+embarkedTable
+
+# Se genera una gráfica de tarta
+# Nombres y porcentajes de los sectores
+pieNames <- names(embarkedTable)
+piePerc <- round(prop.table(embarkedTable)*100, 2)
+
+# Incorporamos a la etiqueta del gráfico los nombres y porcentajes de cada categoría
+pieLabels <- paste(pieNames, "\n", piePerc, "%")
+
+pie(embarkedTable, labels=pieLabels, main="Puerto de embarque",
+    col=brewer.pal(3, "Blues"))
+```
+
+### Correlación entre variables cuantitativas
+
+Dada la influencia que las posibles relaciones entre variables pueden tener en la aplicación de tests estadísticos y la generación del modelo predictivo, vamos a realizar una matriz de correlación entre las variables numéricas existentes en el dataset.
+
+El coeficiente de correlación de Pearson es uno de los más utilizados para identificar relaciones lineales entre variables, pero requiere que estas sigan una distribución normal y que sus varianzas sean iguales (homocedasticidad).
+
+La visualización previa de estas variables mediante histogramas nos hace sospechar que no siguen una distribución normal, pero vamos a utilizar el test de **Shapiro-Wilk** para comprobarlo. En este test la hipótesis nula es que la variable sigue una distribución normal, frente a la hipótesis alternativa en la que la distribución no es normal. 
+
+```{r test-normalidad-corr}
+# Tests sobre las variables numéricas
+shapiro.test(titanicData$Age)
+shapiro.test(titanicData$SibSp)
+shapiro.test(titanicData$Parch)
+shapiro.test(titanicData$Fare)
+```
+
+En todos los tests realizados el p-valor es inferior a 0.05 (nivel de significación por defecto), por lo que no hay evidencia para aceptar la hipótesis nula. En consecuencia, asumimos que las variables **no siguen una distribución normal**. Por tanto, pasamos a aplicar el método de Spearman, test no paramétrico para obtener el grado de dependencia entre variables en las que no se dan los supuestos de normalidad y/o homocedasticidad.
+
+```{r visualizar-corr}
+# Se buscan posibles correlaciones entre variables numéricas
+numData <- select(titanicData, c(Age, SibSp, Parch, Fare))
+
+# Se calcula la matriz de correlación y se representa gráficamente
+corMatrix <- cor(numData, method="spearman")
+corMatrix
+corrplot(corMatrix)
+```
+
+Puede observarse cierta correlación entre las variables SibSp y Parch, así como entre SibSp y Fare, pero no en un grado que permita descartar inicialmente ninguna de ellas.
+
+### Relación de Survived con otras variables
+
+A continuación comprobamos gráficamente si alguna de las variables explicativas cualitativas presentan algún tipo de relación con la variable dependiente. Esta información puede ayudarnos en la selección de variables para los modelos a construir en el apartado de análisis.
+
+```{r survived-vs-pclass}
+# Tabla de contingencia
+pclassTable <- table(titanicData$Pclass, titanicData$Survived)
+rownames(pclassTable) <- c("Primera clase", "Segunda clase", "Tercera clase")
+pclassTable
+
+# Mostramos las proporciones (totalizando por fila)
+prop.table(pclassTable, 1)
+plot(pclassTable, col=brewer.pal(2,"Blues"), main="Supervivencia según clase",
+     ylab="Supervivencia", xlab="Clase del pasaje", las=1)
+```
+
+Tanto en las tablas de contingencia como en la gráfica, puede observarse claramente que, a pesar de que el número de pasajeros de tercera clase era mayor, en proporción sobrevivieron muchos más pasajeros de primera. De hecho, el porcentaje de fallecidos en tercera es del 73% aproximadamente, frente al 42% de primera.
+
+```{r survived-vs-sex}
+# Tabla de contingencia
+sexTable <- table(titanicData$Sex, titanicData$Survived)
+rownames(sexTable) <- c("Mujer", "Hombre")
+sexTable
+
+# Mostramos las proporciones (totalizando por fila)
+prop.table(sexTable, 1)
+plot(sexTable, col=brewer.pal(2,"Blues"), main="Supervivencia según sexo",
+     ylab="Supervivencia", xlab="Sexo", las=1)
+```
+
+Aunque el número de hombres era superior entre los pasajeros del Titanic, puede verse que la supervivencia fue mucho menor: casi un 83% de mujeres se salvaron frente a un 13% de hombres.
+
+```{r survived-vs-embarked}
+# Tabla de contingencia
+embarkedTable <- table(titanicData$Embarked, titanicData$Survived)
+rownames(embarkedTable) <- c("Cherbourg", "Queenstown", "Southampton")
+embarkedTable
+
+# Mostramos las proporciones (totalizando por fila)
+prop.table(embarkedTable, 1)
+plot(embarkedTable, col=brewer.pal(2,"Blues"), 
+     main="Supervivencia según puerto de embarque",
+     ylab="Supervivencia", xlab="Puerto", las=1)
+```
+
+En cuanto al puerto de embarque, se aprecian ciertas diferencias, siendo más relevantes en el caso de Southampton, donde el índice de supervivencia es perceptiblemente menor respecto al siguiente de los puertos (más de 10 puntos porcentuales). Quizá esta discrepancia se deba a otras características comunes que pudieran tener los pasajeros de un puerto u otro, por lo que vamos a investigar más detalladamente la relación de esta variable con otras.
+
+### Relación entre variables categóricas
+
+Revisamos la relación entre la clase y el puerto de embarque:
+
+```{r pclass-vs-embarked}
+# Tabla de contingencia
+pclassEmbarkedTable <- table(titanicData$Embarked, titanicData$Pclass)
+colnames(pclassEmbarkedTable) <- c("Primera clase", "Segunda clase", "Tercera clase")
+rownames(pclassEmbarkedTable) <- c("Cherbourg", "Queenstown", "Southampton")
+pclassEmbarkedTable
+
+# Mostramos las proporciones (totalizando por fila)
+prop.table(pclassEmbarkedTable, 1)
+plot(pclassEmbarkedTable, col=brewer.pal(2,"Blues"), 
+     main="Clase según puerto de embarque",
+     ylab="Clase", xlab="Puerto", las=1)
+```
+
+Como puede observarse, la proporción de pasajeros de primera clase que embarcaron en Cherbourg es mucho mayor que los de Southampton (52.2% vs 19.5%).
+
+```{r embarked-vs-fare}
+# Tabla de contingencia
+pclassEmbarkedFTable <- table(titanicData$Embarked, titanicData$FareD)
+colnames(pclassEmbarkedFTable) <- c("Bajo", "Medio", "Alto")
+rownames(pclassEmbarkedFTable) <- c("Cherbourg", "Queenstown", "Southampton")
+pclassEmbarkedFTable
+
+# Mostramos las proporciones (totalizando por fila)
+prop.table(pclassEmbarkedFTable, 1)
+plot(pclassEmbarkedFTable, col=brewer.pal(2,"Blues"), 
+     main="Precio del pasaje según puerto de embarque",
+     ylab="Precio del pasaje", xlab="Puerto", las=1)
+```
+
+En Cherbourg más de un 40% de los billetes tenían una tarifa alta, en contraste con Southampton, donde predominaban los de precio medio y bajo, y Queenstown, donde alrededor del 74% de los billetes eran de coste bajo. 
+
+Revisamos ahora la posible relación entre la clase y el precio del billete:
+
+```{r pclass-vs-fared}
+# Tabla de contingencia
+pclassFareTable <- table(titanicData$Pclass, titanicData$FareD)
+colnames(pclassFareTable) <- c("Bajo", "Medio", "Alto")
+rownames(pclassFareTable) <- c("Primera clase", "Segunda clase", "Tercera clase")
+pclassFareTable
+
+# Mostramos las proporciones (totalizando por fila)
+prop.table(pclassFareTable, 1)
+plot(pclassFareTable, col=brewer.pal(2,"Blues"), 
+     main="Precio según Clase",
+     ylab="Precio", xlab="Clase", las=1)
+```
+
+Como era de esperar, la mayor proporción de billetes caros se da en primera clase, los de coste medio están sobre todo ubicados en segunda clase y, por último, los de tercera suelen ser los más baratos.
+
+Por último, se representa la relación entre las variables de clase, precio del billete y supervivencia:
+
+```{r pclass-vs-fared-survived}
+# Se visualiza la relación entre Pclass, FareD y Survived 
+ggplot(data=titanicData[1:length(titanicData$Survived),], aes(x=Pclass, fill=Survived)) +
+  geom_bar(position="fill", color="darkblue") + facet_wrap(~FareD) + ylab("frequence") + 
+  scale_fill_brewer(palette="Blues")
+```
+
+Esta gráfica parece sugerir que, además de la clase, el precio del billete también es relevante, sobre todo en primera y segunda clase, donde el número de supervivientes es mayor si el coste del billete es superior.
+
+## Planificación
+
+El análisis que se va a llevar a cabo pretende establecer un modelo de predicción de la variable Survived considerando algunas de las características de los pasajeros del Titanic. Para ello, se ha decidido evaluar tres métodos de predicción distintos:
+
+* Árbol de decisión: se utilizará el algoritmo C5.0. Para aquellas variables numéricas como edad o precio del pasaje, se utilizarán las variables discretizadas que preparamos en apartados anteriores. 
+* Regresión logística: que nos permite predecir la probabilidad de ocurrencia de una variable dependiente dicotómica (Survived) a partir de la influencia, indicada por unos coeficientes calculados por el algoritmo, de las variables independientes.
+* Random Forest: donde se generan varios árboles de decisión simultáneamente incluyendo al azar las variables predictoras.
+
+Para escoger aquella técnica que presenta un mejor desempeño, se realizará una evaluación de todas ellas utilizando una validación cruzada, *k-fold cross validation*. Para ello, es preciso realizar una división del conjunto de datos en k subconjuntos e ir alternándolos en el entrenamiento y prueba de los modelos (k iteraciones). Las métricas de comparación entre modelos que se emplearán serán la precisión y el coeficiente kappa de Cohen:
+
+* Precisión: es el porcentaje de clasificaciones correctas de todas las instancias.
+* Kappa: similar a la precisión, pero ajustando el efecto del azar en la proporción de la concordancia observada.
+
+## Comprobación de normalidad y homocedasticidad
+
+En apartados previos ya tuvimos que aplicar el test de Shapiro-Wilk para seleccionar el método utilizar en el estudio de correlación entre variables, y se concluyó que las variables estudiadas no presentaban una distribución normal.
+
+Aunque el estudio de homocedasticidad no es preciso para el objetivo principal que se persigue en este análisis, vamos a proceder, con fines meramente académicos, a analizar las varianzas de las edades en dos grupos: supervivientes frente a fallecidos.
+
+Dado que la variable Age no sigue una distribución normal, aplicamos el test de Levene (utilizando la mediana) para comprobar si los dos grupos tienen igualdad de varianzas.
+
+```{r test-homocedasticidad}
+# Se aplica el test de Levene
+leveneTest(Age~Survived, data=titanicData, location="median")
+```
+
+El p-valor es superior a 0.05, por lo que **no hay diferencias significativas entre las varianzas de los dos grupos**.
+
+## Aplicación de pruebas estadísticas
+
+En primer lugar, se realiza la división del conjunto de datos en 10 subconjuntos. Se ha escogido k=10 por ser un valor que empíricamente ha demostrado buenos resultados en tareas de data mining y machine learning (*Brownlee*, 2018).
+
+```{r preparacion-k-fold}
+# Se utiliza el paquete caret para realizar la evaluación de modelos. Indicamos que se
+# va a realizar una validación cruzada con k=10
+fitControl <- trainControl(method="cv", number=10, savePredictions=TRUE)
+```
+
+### Árbol de decisión
+
+A continuación, se procede a evaluar el algoritmo C5.0 de árboles de decisión con k-fold validation:
+
+```{r k-fold-arbol1}
+## Estimamos la precisión para el algoritmo C5.0
+set.seed(0806)
+titanicTree1 <- train(Survived ~ Pclass + Sex + AgeD + SibSpD + ParchD + FareD + Embarked,
+                      data=titanicData, method="C5.0Tree", trControl=fitControl)
+
+# Mostramos los resultados obtenidos
+print(titanicTree1)
+
+# Así como las variables según su importancia en el modelo construido
+plot(varImp(titanicTree1))
+```
+
+Se ha obtenido un modelo con una precisión del `r signif(titanicTree1$results$Accuracy*100, digits=4)`% y un kappa de `r signif(titanicTree1$results$Kappa, digits=4)`. Además, la única variable predictora que utiliza el modelo es el sexo del pasajero.
+
+### Modelo de regresión logística 
+
+Con el objetivo de intentar mejorar el desempeño del modelo anterior, utilizaremos un modelo de regresión logística. En él, se evaluará la probabilidad de que un pasajero sobreviva al hundimiento (variable dependiente dicotómica) mediante el uso de ciertas variables explicativas.
+
+Nuestra primera versión del modelo utiliza como variables predictoras todas las variables originales del dataset (a excepción de las descartadas al comienzo de la práctica).
+
+```{r k-fold-glm1}
+## Estimamos la precisión con el modelo de regresión logística
+set.seed(0806)
+titanicGlm1 <- train(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked,
+                     data=titanicData, method="glm", family=binomial(),
+                     trControl=fitControl)
+                    
+# Mostramos el resultado del modelo y las variables según su importancia
+print(titanicGlm1)
+plot(varImp(titanicGlm1))
+```
+
+Se ha obtenido un modelo con una precisión del `r signif(titanicGlm1$results$Accuracy*100, digits=4)`% y un kappa de `r signif(titanicGlm1$results$Kappa, digits=4)`. Las variables más importantes en la elaboración del modelo son el sexo del pasajero, la clase y la edad, por lo que vamos a intentar afinar el modelo eliminando las variables con menos peso.
+
+```{r k-fold-glm2}
+## Evaluamos el modelo de regresión logística
+set.seed(0806)
+titanicGlm2 <- train(Survived ~ Pclass + Sex + Age,
+                     data=titanicData, method="glm", family=binomial(),
+                     trControl=fitControl)
+                   
+# Mostramos los resultados y la importancia de las variables
+print(titanicGlm2)
+plot(varImp(titanicGlm2))
+```
+
+Con este ajuste se ha conseguido una precisión pareja a la del modelo de C5.0 pero se ha mejorado ligeramente el valor de kappa, por lo que, de momento, este es el modelo con mejor desempeño.
+
+### Random forest
+
+En este apartado se hace uso del algoritmo predictivo **random forest**, que realiza varias combinaciones de árboles de decisión utilizando distintas observaciones y variables en cada uno de ellos. Para la predicción de la variable contabiliza los resultados de la misma obtenidos en todos los árboles y da por bueno aquel que se repite en más ocasiones.  
+
+Realizamos una primera ejecución considerando todas las variables (a excepción de las versiones discretizadas de Age, SibSp, Parch y Fare):
+
+```{r k-fold-rf1}
+## Evaluamos el modelo de random forest
+set.seed(0806)
+titanicRf1 <- train(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked,
+                    data=titanicData, method="rf", trControl=fitControl)
+
+# Mostramos los resultados
+print(titanicRf1)
+plot(varImp(titanicRf1))
+```
+
+Las variables SibSp, Parch y Embarked son las que menor importancia presentan para el modelo, por lo que vamos a repetir la evaluación del modelo eliminándolas:
+
+```{r k-fold-rf2}
+## Evaluamos el modelo de random forest
+set.seed(0806)
+titanicRf2 <- train(Survived ~ Pclass + Sex + Age + Fare,
+                    data=titanicData, method="rf", trControl=fitControl)
+
+# Se muestran los resultados obtenidos
+print(titanicRf2)
+plot(varImp(titanicRf2))
+```
+
+Como se puede observar, se han mejorado los valores de precisión y kappa de la versión anterior, con unos valores de `r signif(titanicRf2$results[titanicRf2$results$mtry==titanicRf2$bestTune$mtry,]$Accuracy*100, digits=4)`% y `r signif(titanicRf2$results[titanicRf2$results$mtry==titanicRf2$bestTune$mtry,]$Kappa, digits=4)` respectivamente.
+
+## Representación de los resultados
+
+Vamos a proceder a comparar los resultados obtenidos para cada uno de los modelos probados en el apartado anterior; para ello, utilizaremos la función resamples del paquete caret.
+
+```{r comparativa-modelos}
+# Almacenamos los resultados de los tres modelos
+results <- resamples(list(C50=titanicTree1, GLM=titanicGlm2, RF=titanicRf2))
+
+# Mostramos un resumen
+summary(results)
+
+# Y los boxplots y dotplots correspondientes
+bwplot(results)
+dotplot(results)
+```
+
+El modelo de random forest presenta una mayor precisión y un kappa más elevado, por lo que, de las tres técnicas revisadas, se considera esta como la más adecuada para este problema y será la que se utilice para construir el modelo final.
+
+Una vez que se ha establecido que la técnica de random forest es la mejor de las evaluadas para resolver el problema planteado, debe construirse un nuevo modelo con todo el conjunto de datos disponible actualmente. Este nuevo modelo debería ser utilizado en el supuesto (totalmente teórico en el caso del Titanic) de que llegasen nuevas observaciones para las que fuese necesario predecir el valor de Survived.
+
+```{r construccion-modelo-final}
+## Estimamos la precisión con el modelo de regresión logística
+set.seed(0806)
+titanicFinalModel <- train(Survived ~ Pclass + Sex + Age + Fare,
+                     data=titanicData, method="rf")
+
+# Se muestran los resultados obtenidos
+print(titanicFinalModel)
+plot(varImp(titanicFinalModel))
+```
+
+# Conclusiones
+
+Dado que aproximadamente el 63% de las personas que viajaban en el Titanic **no** sobrevivieron (valor mayoritario o moda, correspondiente a la variable Survived), cualquier modelo que se construya debe tener una precisión mayor que este porcentaje.
+
+Tras la construcción y evaluación de varios modelos predictivos, hemos concluido que el mejor de ellos se basa en el algoritmo de random forest. Para evaluar los modelos se ha utilizado la técnica de validación cruzada 10-fold cross validation y se han contrastado los valores medios de la precisión y el índice kappa de cada uno de ellos.
+
+En los tres modelos pre-seleccionados, se ha concluido que la variable más significativa es el sexo. De hecho, el modelo más preciso alcanzado con el árbol de decisión, utilizaba sólo esta variable. Esta sobresimplificación del problema, "las mujeres sobreviven, los hombres no", conlleva a que el modelo sea descartado, aunque su precisión sea equiparable a la obtenida en la regresión logística, y a que se decida probar con otro tipo de técnicas.
+
+Revisando las siguientes variables con mayor peso en la predicción, observamos algunas diferencias entre el modelo de regresión logística y el modelo de random forest:
+
+```{r estudio-vbles-rf-2, echo=FALSE}
+# Importancia de las variables en el modelo de regresión logística
+varImp(titanicGlm2)
+
+# Importancia de las variables en el modelo random forest
+varImp(titanicRf2)
+```
+
+Mientras que para el modelo de regresión logística la siguiente variable en importancia es Pclass (clase del pasaje), para el de random forest las siguientes variables en importancia son Fare (coste del billete) y Age (edad del pasajero). De hecho, la variable Fare fue eliminada en el segundo modelo de regresión construido al concluir que no era una variable significativa.
+
+A priori, parece natural que hubiera una relación directa entre las variables Fare y Pclass, ya que el precio del billete debería venir determinado por el tipo de clase. Sin embargo, en el apartado de análisis descriptivo visual ya se comprobó con varios gráficos que esta circunstancia no siempre es cierta, y por ello se mantuvieron ambas variables en el estudio.
+
+Siguiendo con la revisión de la importancia de variables para random forest, se observa que el precio del billete tiene un peso superior al de la clase del pasaje. Esto parece sugerir que no es tanto la clase, sino los camarotes más caros lo que aumenta las posibilidades de supervivencia. Quizá la ubicación de estos camarotes fuese más cercana o tuviese mejores accesos a las cubiertas donde se encontraban los botes salvavidas, y de ahí su influencia en el modelo.
+
+Considerando además la importancia y los resultados obtenidos para la edad y el sexo, se puede concluir que en el hundimiento del Titanic sí se siguió la norma no escrita de "las mujeres y los niños primero".
+
+# Código fuente
+
+El código generado para la realización de esta práctica se encuentra disponible en https://github.com/azucenagm/Titanic.
+
+# Bibliografía
+
+**Grolemund, Garrett; Wickham, Hadley** (2016). *R for Data Science* (1ª ed.). Sebastopol: O'Reilly Media, Inc.
+
+**Teetor, Paul; Long, JD** (2019). *R Cookbook* (2ª ed.). Sebastopol: O'Reilly Media, Inc.
+
+**Amat, Joaquín** (2016, enero). “Análisis de la homogeneidad de varianza”. RPubs [artículo en línea]. [Fecha de consulta: 30 de mayo de 2019]. 
+<https://rpubs.com/Joaquin_AR/218466>
+
+**Brownlee, Jason** (2018, mayo). "A Gentle Introduction to k-fold Cross-Validation". *Machine Learning Mastery* [Fecha de consulta: 31 de mayo de 2019].
+<https://machinelearningmastery.com/k-fold-cross-validation/>
+
+**Brownlee, Jason** (2014, septiembre). "How To Estimate Model Accuracy in R Using The Caret Package". *Machine Learning Mastery* [Fecha de consulta: 31 de mayo de 2019].
+<https://machinelearningmastery.com/how-to-estimate-model-accuracy-in-r-using-the-caret-package/>
+
+**Brownlee, Jason** (2016, febrero). "Machine Learning Evaluation Metrics in R". *Machine Learning Mastery* [Fecha de consulta: 1 de junio de 2019].
+<https://machinelearningmastery.com/machine-learning-evaluation-metrics-in-r/>
+
+**Santana, Enmanuel** (2014, noviembre). "Machine Learning con R: ejemplo de Random Forest". *Apuntes R* [artículo en línea]. [Fecha de consulta: 22 de mayo de 2019].
+<http://apuntes-r.blogspot.com/2014/11/ejemplo-de-random-forest.html>
+
+"How do I interpret the AIC" (2018, abril). *R-bloggers* [artículo en línea]. [Fecha de consulta: 20 de mayo de 2019].
+<https://www.r-bloggers.com/how-do-i-interpret-the-aic>
+
+"Precios y descripción de los camarotes" (2012, diciembre). *El hundimiento* [artículo en línea]. [Fecha de consulta: 25 de mayo de 2019].
+<https://elhundimiento.weebly.com/precios-clases-y-distribucioacuten-de-los-camarotes.html>
+
+"Qué incluía el billete más caro del Titanic" (2016, abril). *Traveler* [artículo en línea]. [Fecha de consulta: 25 de mayo de 2019].
+<https://www.traveler.es/experiencias/articulos/billete-mas-caro-titanic/8724>
+
+"RMS Titanic" (2019, mayo). *Wikipedia* [artículo en línea]. [Fecha de consulta: 25 de mayo de 2019].
+<https://es.wikipedia.org/wiki/RMS_Titanic">
+
+"Caret Package – A Practical Guide to Machine Learning in R" (2018, marzo). *Machine Learning Plus* [artículo en línea]. [Fecha de consulta: 1 de junio de 2019].
+<https://www.machinelearningplus.com/machine-learning/caret-package/>
+
+# Contribuciones
+
+```{r contribuciones, echo=FALSE}
+# Autores de los contenidos de la práctica
+sections <- c("Investigación previa", "Redacción de las respuestas", "Desarrollo del código")
+authors <- c("AGM, JMD", "AGM, JMD", "AGM, JMD")
+authTable <- data.frame (cbind(sections,authors))
+colnames(authTable) <- c("Contribuciones", "Firma")
+kable(authTable) %>% kable_styling(latex_options=c("striped"))
+```
